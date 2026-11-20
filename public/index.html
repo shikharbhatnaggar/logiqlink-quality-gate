@@ -1,0 +1,345 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LogiQlink - Support Dashboard</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f9;
+            margin: 0;
+            padding: 30px;
+            color: #222;
+        }
+
+        .container {
+            max-width: 750px;
+            margin: auto;
+        }
+
+        .card {
+            background: white;
+            padding: 22px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        button, select {
+            padding: 11px 16px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            cursor: pointer;
+            margin: 5px 5px 5px 0;
+        }
+
+        button.primary {
+            background: #2563eb;
+            color: white;
+            border: none;
+        }
+
+        button.approve {
+            background: #15803d;
+            color: white;
+            border: none;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .message {
+            background: #f1f5f9;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+
+        .success { color: green; }
+        .error { color: red; }
+        .warning { color: #b45309; }
+
+        #summary {
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>Support Dashboard</h1>
+
+    <div class="card">
+        <h2 id="ticketTitle">Loading ticket...</h2>
+        <p id="customer"></p>
+
+        <h3>Customer Messages</h3>
+        <div id="messages"></div>
+    </div>
+
+    <div class="card">
+
+        <h3>AI Summary Generator</h3>
+
+        <label for="scenario">Select demo response:</label>
+
+        <select id="scenario">
+            <option value="success">Successful response</option>
+            <option value="insufficient">Insufficient information</option>
+            <option value="unavailable">Service unavailable</option>
+            <option value="invalid-citation">Invalid citation</option>
+            <option value="missing-citation">Missing citation</option>
+        </select>
+
+        <br><br>
+
+        <button class="primary" id="generateBtn">
+            Generate Summary
+        </button>
+
+        <div id="result" aria-live="polite" style="margin-top:20px;">
+
+            <h3>Generated Summary</h3>
+
+            <p id="summary" data-testid="summary">
+                No summary generated yet.
+            </p>
+
+            <p id="sources"></p>
+
+            <p id="status"></p>
+
+        </div>
+
+        <button
+            class="approve"
+            id="approveBtn"
+            disabled
+            data-testid="approve-button">
+            Approve Summary
+        </button>
+
+        <button id="retryBtn" hidden>
+            Retry Generation
+        </button>
+
+        <p id="approvalMessage" aria-live="polite"></p>
+
+    </div>
+
+</div>
+
+<script>
+
+const ticketId = "1001";
+
+let currentTicket = null;
+
+let canApprove = false;
+
+const generateBtn = document.getElementById("generateBtn");
+const retryBtn = document.getElementById("retryBtn");
+const approveBtn = document.getElementById("approveBtn");
+
+const summaryElement = document.getElementById("summary");
+const sourcesElement = document.getElementById("sources");
+const statusElement = document.getElementById("status");
+
+
+// Load ticket
+async function loadTicket() {
+
+    const response = await fetch(`/api/tickets/${ticketId}`);
+
+    if (!response.ok) {
+        throw new Error("Unable to load ticket");
+    }
+
+    currentTicket = await response.json();
+
+    document.getElementById("ticketTitle").textContent =
+        `Ticket #${currentTicket.id} - ${currentTicket.subject}`;
+
+    document.getElementById("customer").textContent =
+        `Customer: ${currentTicket.customer}`;
+
+    const messagesContainer = document.getElementById("messages");
+
+    currentTicket.messages.forEach(message => {
+
+        const div = document.createElement("div");
+
+        div.className = "message";
+
+        div.textContent = `${message.id}: ${message.text}`;
+
+        messagesContainer.appendChild(div);
+
+    });
+
+}
+
+
+// Validate citations
+function validateCitations(sourceIds) {
+
+    if (!Array.isArray(sourceIds) || sourceIds.length === 0) {
+        return false;
+    }
+
+    const validMessageIds = currentTicket.messages.map(
+        message => message.id
+    );
+
+    return sourceIds.every(id =>
+        validMessageIds.includes(id)
+    );
+
+}
+
+
+// Reset approval state
+function resetApproval() {
+
+    canApprove = false;
+
+    approveBtn.disabled = true;
+
+    document.getElementById("approvalMessage").textContent = "";
+
+}
+
+
+// Generate summary
+async function generateSummary() {
+
+    resetApproval();
+
+    retryBtn.hidden = true;
+
+    generateBtn.disabled = true;
+
+    summaryElement.textContent = "Generating summary...";
+
+    statusElement.textContent = "";
+
+    sourcesElement.textContent = "";
+
+    const scenario = document.getElementById("scenario").value;
+
+    try {
+
+        const response = await fetch(
+            `/api/tickets/${ticketId}/summary`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ scenario })
+            }
+        );
+
+        if (response.status === 503) {
+
+            throw new Error("Summary service is unavailable.");
+
+        }
+
+        const data = await response.json();
+
+        if (data.status === "insufficient_information") {
+
+            summaryElement.textContent =
+                "Not enough information to generate a reliable summary.";
+
+            statusElement.textContent = "Insufficient information";
+
+            statusElement.className = "warning";
+
+            return;
+
+        }
+
+        if (data.status !== "ok") {
+
+            throw new Error("Unexpected service response.");
+
+        }
+
+        summaryElement.textContent = data.summary;
+
+        sourcesElement.textContent =
+            `Sources: ${(data.sourceIds || []).join(", ")}`;
+
+        const valid = validateCitations(data.sourceIds);
+
+        if (valid) {
+
+            canApprove = true;
+
+            approveBtn.disabled = false;
+
+            statusElement.textContent = "Valid summary";
+
+            statusElement.className = "success";
+
+        } else {
+
+            statusElement.textContent =
+                "Invalid or missing citations. Approval blocked.";
+
+            statusElement.className = "error";
+
+        }
+
+    } catch (error) {
+
+        summaryElement.textContent = error.message;
+
+        statusElement.textContent = "Generation failed";
+
+        statusElement.className = "error";
+
+        retryBtn.hidden = false;
+
+    } finally {
+
+        generateBtn.disabled = false;
+
+    }
+
+}
+
+
+// Event listeners
+generateBtn.addEventListener("click", generateSummary);
+
+retryBtn.addEventListener("click", generateSummary);
+
+approveBtn.addEventListener("click", () => {
+
+    if (!canApprove) return;
+
+    document.getElementById("approvalMessage").textContent =
+        "Summary approved successfully.";
+
+});
+
+
+// Initialize dashboard
+loadTicket().catch(error => {
+    document.getElementById("ticketTitle").textContent = error.message;
+});
+
+</script>
+
+</body>
+</html>

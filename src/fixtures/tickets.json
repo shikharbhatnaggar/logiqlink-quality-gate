@@ -1,0 +1,34 @@
+{
+  "tickets": [
+    {
+      "id": "1001",
+      "customer": "John",
+      "subject": "Order delivery issue",
+      "messages": [
+        {
+          "id": "m1",
+          "text": "My order has not arrived yet."
+        },
+        {
+          "id": "m2",
+          "text": "I placed the order on November 15."
+        }
+      ]
+    },
+    {
+      "id": "1002",
+      "customer": "Sarah",
+      "subject": "Payment issue",
+      "messages": [
+        {
+          "id": "m999",
+          "text": "My payment was deducted twice."
+        },
+        {
+          "id": "m1000",
+          "text": "Please refund the extra payment."
+        }
+      ]
+    }
+  ]
+}
